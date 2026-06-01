@@ -171,6 +171,9 @@ describe("browser app", () => {
 
     expect(body).toContain('<textarea name="markdown"');
     expect(body).toContain('class="preview"');
+    expect(body).toContain('data-markdown-editor');
+    expect(body).toContain('data-markdown-preview');
+    expect(body).toContain("renderMarkdown");
     expect(body).toContain("Publish draft");
   });
 
