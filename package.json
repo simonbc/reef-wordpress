@@ -1,0 +1,17 @@
+{
+  "name": "reef-wordpress",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "reef": "./bin/reef.ts"
+  },
+  "scripts": {
+    "start": "bun run bin/reef.ts",
+    "test": "bun test",
+    "check": "bun test && bun build bin/reef.ts --outdir /tmp/reef-wordpress-check --target bun"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
