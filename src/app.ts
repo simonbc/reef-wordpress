@@ -1,21 +1,89 @@
 import { loadConfig, saveWordPressComConfig } from "./config";
 import type { DocumentType, ReefDocument } from "./domain";
 import { escapeHtml, markdownToHtml } from "./markdown";
+import {
+  buildWordPressAuthorizeUrl,
+  exchangeWordPressCode,
+  readOAuthState,
+  saveOAuthState,
+  saveWordPressToken,
+  type WordPressOAuthConfig,
+} from "./oauth";
 import { createDocumentStore } from "./store";
 
 export type App = {
   fetch(request: Request): Promise<Response>;
 };
 
-export function createApp(input: { root: string }): App {
+export function createApp(input: {
+  root: string;
+  wordpressOAuth?: WordPressOAuthConfig;
+  randomState?: () => string;
+  fetch?: typeof fetch;
+}): App {
   return {
-    fetch: (request) => handleRequest(input.root, request),
+    fetch: (request) => handleRequest(input, request),
   };
 }
 
-async function handleRequest(root: string, request: Request): Promise<Response> {
+async function handleRequest(
+  app: {
+    root: string;
+    wordpressOAuth?: WordPressOAuthConfig;
+    randomState?: () => string;
+    fetch?: typeof fetch;
+  },
+  request: Request,
+): Promise<Response> {
+  const root = app.root;
   const url = new URL(request.url);
   const config = await loadConfig(root);
+
+  if (request.method === "POST" && url.pathname === "/auth/wordpress/start") {
+    if (!app.wordpressOAuth) {
+      return htmlResponse(renderSetup("WordPress.com OAuth is not configured for this Reef app."), 400);
+    }
+
+    const form = await request.formData();
+    const site = stringField(form, "site");
+    await saveWordPressComConfig(root, {
+      title: stringField(form, "title") || "Reef",
+      site,
+    });
+    const state = app.randomState?.() ?? crypto.randomUUID();
+    await saveOAuthState(root, state);
+    return redirect(
+      buildWordPressAuthorizeUrl({
+        clientId: app.wordpressOAuth.clientId,
+        redirectUri: callbackUrl(url),
+        site,
+        state,
+      }),
+    );
+  }
+
+  if (url.pathname === "/auth/wordpress/callback") {
+    if (!app.wordpressOAuth) {
+      return htmlResponse(renderLayout("Connect WordPress.com", "<p>WordPress.com OAuth is not configured.</p>"), 400);
+    }
+
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    const expectedState = await readOAuthState(root);
+    if (!code || !state || state !== expectedState) {
+      return htmlResponse(renderLayout("Connect WordPress.com", "<p>WordPress.com authorization did not match this local session.</p>"), 400);
+    }
+
+    const accessToken = await exchangeWordPressCode({
+      clientId: app.wordpressOAuth.clientId,
+      clientSecret: app.wordpressOAuth.clientSecret,
+      code,
+      redirectUri: callbackUrl(url),
+      fetch: app.fetch,
+    });
+    await saveWordPressToken(root, accessToken);
+    return redirect("/");
+  }
 
   if (request.method === "POST" && url.pathname === "/setup") {
     const form = await request.formData();
@@ -67,7 +135,7 @@ async function handleRequest(root: string, request: Request): Promise<Response> 
   return htmlResponse(renderLayout(config.title, "<p>Not found.</p>"), 404);
 }
 
-function renderSetup(): string {
+function renderSetup(error?: string): string {
   return renderLayout(
     "Connect WordPress.com",
     [
@@ -75,12 +143,13 @@ function renderSetup(): string {
       '<div class="brand">Reef</div>',
       "<h1>Connect WordPress.com</h1>",
       "<p>Start by connecting this local workspace to a WordPress.com site.</p>",
-      '<form method="post" action="/setup" class="setup-form">',
+      error ? `<p class="error">${escapeHtml(error)}</p>` : "",
+      '<form method="post" action="/auth/wordpress/start" class="setup-form">',
       '<label>Site title<input name="title" placeholder="My Site"></label>',
       '<label>WordPress.com site<input name="site" placeholder="example.wordpress.com" required></label>',
-      '<label>Token environment variable<input name="token_env" value="REEF_WORDPRESS_COM_TOKEN"></label>',
-      "<button>Save connection</button>",
+      '<button>Connect with WordPress.com</button>',
       "</form>",
+      '<p class="setup-note">Reef stores the OAuth token locally under .reef/secrets, not in reef.toml.</p>',
       "</main>",
     ].join("\n"),
     { bare: true },
@@ -234,6 +303,8 @@ nav { display: flex; gap: 18px; align-items: center; color: #6f6a62; }
 .setup h1 { font-size: 42px; margin: 0 0 10px; }
 .setup p { color: #6f6a62; font-size: 18px; line-height: 1.5; }
 .setup-form { display: grid; gap: 18px; margin-top: 34px; }
+.setup-note { font-size: 14px !important; }
+.error { color: #9f2d20 !important; }
 label { display: grid; gap: 7px; color: #6f6a62; font-weight: 700; }
 input, textarea { width: 100%; border: 1px solid var(--line); background: #fff; color: var(--ink); font: inherit; border-radius: 12px; padding: 13px 14px; }
 .editor-shell { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 68px; background: #fff; }
@@ -273,4 +344,8 @@ function htmlResponse(body: string, status = 200): Response {
 
 function redirect(location: string): Response {
   return new Response(null, { status: 303, headers: { location } });
+}
+
+function callbackUrl(url: URL): string {
+  return `${url.origin}/auth/wordpress/callback`;
 }

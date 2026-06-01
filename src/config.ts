@@ -5,7 +5,6 @@ export type ReefConfig = {
   title: string;
   wordpressCom: {
     site: string;
-    tokenEnv: string;
   } | null;
 };
 
@@ -20,13 +19,10 @@ export async function loadConfig(root: string): Promise<ReefConfig> {
   const title = readTomlString(source, "title") ?? "Reef";
   const wordpressSection = readSection(source, "wordpress_com");
   const site = wordpressSection ? readTomlString(wordpressSection, "site") : null;
-  const tokenEnv =
-    (wordpressSection ? readTomlString(wordpressSection, "token_env") : null) ??
-    "REEF_WORDPRESS_COM_TOKEN";
 
   return {
     title,
-    wordpressCom: site ? { site, tokenEnv } : null,
+    wordpressCom: site ? { site } : null,
   };
 }
 
@@ -36,15 +32,13 @@ export async function isConfigured(root: string): Promise<boolean> {
 
 export async function saveWordPressComConfig(
   root: string,
-  input: { title: string; site: string; tokenEnv?: string },
+  input: { title: string; site: string },
 ): Promise<void> {
-  const tokenEnv = input.tokenEnv?.trim() || "REEF_WORDPRESS_COM_TOKEN";
   const source = [
     `title = ${tomlString(input.title.trim() || "Reef")}`,
     "",
     "[wordpress_com]",
     `site = ${tomlString(input.site.trim())}`,
-    `token_env = ${tomlString(tokenEnv)}`,
     "",
   ].join("\n");
   const path = join(root, "reef.toml");

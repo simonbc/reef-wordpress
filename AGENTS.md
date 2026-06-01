@@ -61,12 +61,12 @@ The setup screen should ask for:
 
 - site title
 - WordPress.com site, e.g. `example.wordpress.com`
-- token environment variable name, default `REEF_WORDPRESS_COM_TOKEN`
 
-The setup action writes `reef.toml`.
+The setup action starts WordPress.com OAuth and writes `reef.toml`.
 
-Do not ask for the actual token in the first prototype UI unless secure local
-secret storage exists. Tokens should come from environment variables for now.
+Do not ask for the actual token in the UI. OAuth tokens are written to
+`.reef/secrets/wordpress-com.json` for the prototype. A later version can use the
+OS keychain.
 
 ## Config
 
@@ -79,10 +79,23 @@ title = "My Site"
 
 [wordpress_com]
 site = "example.wordpress.com"
-token_env = "REEF_WORDPRESS_COM_TOKEN"
 ```
 
 Do not store WordPress.com tokens in `reef.toml`.
+
+The local app needs WordPress.com OAuth app credentials from environment
+variables:
+
+```sh
+REEF_WORDPRESS_COM_CLIENT_ID
+REEF_WORDPRESS_COM_CLIENT_SECRET
+```
+
+The local OAuth callback URL is:
+
+```text
+http://localhost:3000/auth/wordpress/callback
+```
 
 ## Local Source Model
 
@@ -205,6 +218,7 @@ Use WordPress.com APIs only in this prototype.
 Expected early capabilities:
 
 - configure a WordPress.com site
+- connect WordPress.com via OAuth
 - create/list/edit local posts
 - create/list/edit local pages
 - store media locally

@@ -17,7 +17,6 @@ describe("project config", () => {
     await saveWordPressComConfig(root, {
       title: "Simon",
       site: "simon.wordpress.com",
-      tokenEnv: "REEF_WORDPRESS_COM_TOKEN",
     });
 
     await expect(readFile(join(root, "reef.toml"), "utf8")).resolves.toBe(
@@ -26,7 +25,6 @@ describe("project config", () => {
         "",
         "[wordpress_com]",
         'site = "simon.wordpress.com"',
-        'token_env = "REEF_WORDPRESS_COM_TOKEN"',
         "",
       ].join("\n"),
     );
@@ -34,7 +32,6 @@ describe("project config", () => {
       title: "Simon",
       wordpressCom: {
         site: "simon.wordpress.com",
-        tokenEnv: "REEF_WORDPRESS_COM_TOKEN",
       },
     });
   });
