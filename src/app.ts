@@ -175,6 +175,17 @@ async function handleRequest(
     return redirect(`/${type === "post" ? "posts" : "pages"}/${document.slug}`);
   }
 
+  const deleteMatch = url.pathname.match(/^\/(posts|pages)\/([^/]+)\/delete$/);
+  if (request.method === "POST" && deleteMatch) {
+    const type = deleteMatch[1] === "pages" ? "page" : "post";
+    const slug = decodeURIComponent(deleteMatch[2]);
+    const deleted = await store.delete(`${type}:${slug}`);
+    if (!deleted) {
+      return htmlResponse(renderLayout(config.title, "<p>Not found.</p>"), 404);
+    }
+    return redirect("/");
+  }
+
   if (url.pathname === "/") {
     const [posts, pages] = await Promise.all([store.list("post"), store.list("page")]);
     return htmlResponse(renderHome({ title: config.title, posts, pages }));
@@ -363,15 +374,28 @@ function renderDocument(siteTitle: string, document: ReefDocument): string {
     [
       '<header class="topbar">',
       '<a class="brand" href="/">Reef</a>',
-      `<nav><a href="/${document.type === "post" ? "posts" : "pages"}/${encodeURIComponent(document.slug)}/edit">Edit</a><a class="button" href="/new">Create</a></nav>`,
+      '<nav><a class="button" href="/new">Create</a></nav>',
       "</header>",
       '<main class="article">',
       `<h1>${escapeHtml(document.title)}</h1>`,
       `<div class="meta">${escapeHtml(document.date)} · ${statusLabel(document)}</div>`,
       markdownToHtml(document.markdown),
+      renderArticleActions(document),
       "</main>",
     ].join("\n"),
   );
+}
+
+function renderArticleActions(document: ReefDocument): string {
+  const path = `/${document.type === "post" ? "posts" : "pages"}/${encodeURIComponent(document.slug)}`;
+  return [
+    '<div class="article-actions">',
+    `<a href="${path}/edit">Edit</a>`,
+    `<form method="post" action="${path}/delete">`,
+    "<button>Delete</button>",
+    "</form>",
+    "</div>",
+  ].join("");
 }
 
 function renderFeedItem(document: ReefDocument): string {
@@ -468,6 +492,10 @@ textarea { border: 0; padding: 34px 0; min-height: 70vh; resize: none; outline: 
 .primary { background: var(--accent); }
 .article { max-width: 680px; margin: 80px auto; padding: 0 24px; font-family: Georgia, serif; font-size: 22px; line-height: 1.6; }
 .article h1 { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 42px; line-height: 1.1; }
+.article-actions { margin-top: 48px; display: flex; gap: 18px; align-items: center; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 15px; color: var(--muted); }
+.article-actions a { border-bottom: 1px solid var(--line); }
+.article-actions form { margin: 0; }
+.article-actions button { appearance: none; border: 0; background: transparent; color: var(--muted); padding: 0; border-radius: 0; border-bottom: 1px solid var(--line); font: inherit; font-weight: 400; }
 @media (max-width: 800px) {
   .editor-shell { display: block; }
   .editor-pane { border-right: 0; border-bottom: 1px solid var(--line); }

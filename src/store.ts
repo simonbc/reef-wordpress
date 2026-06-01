@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   documentId,
@@ -12,6 +12,7 @@ import {
 type DocumentStore = {
   save(input: SaveDocumentInput): Promise<ReefDocument>;
   update(id: string, input: { title: string; markdown: string }): Promise<ReefDocument | null>;
+  delete(id: string): Promise<boolean>;
   list(type: DocumentType): Promise<ReefDocument[]>;
   read(id: string): Promise<ReefDocument | null>;
   setWordPressState(id: string, state: WordPressState): Promise<void>;
@@ -21,10 +22,20 @@ export function createDocumentStore(root: string): DocumentStore {
   return {
     save: (input) => saveDocument(root, input),
     update: (id, input) => updateDocument(root, id, input),
+    delete: (id) => deleteDocument(root, id),
     list: (type) => listDocuments(root, type),
     read: (id) => readDocument(root, id),
     setWordPressState: (id, state) => setWordPressState(root, id, state),
   };
+}
+
+async function deleteDocument(root: string, id: string): Promise<boolean> {
+  const existing = await readDocument(root, id);
+  if (!existing) {
+    return false;
+  }
+  await rm(contentPath(root, existing.type, existing.slug), { force: true });
+  return true;
 }
 
 async function updateDocument(

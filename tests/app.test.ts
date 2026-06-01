@@ -233,6 +233,45 @@ describe("browser app", () => {
     );
   });
 
+  test("shows edit and delete links underneath rendered post content", async () => {
+    const root = await tempRoot();
+    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite_id = "123"\n');
+    await Bun.write(
+      join(root, "posts", "hello.md"),
+      "---\ntitle: Hello\ndate: 2026-06-01\nstatus: local-draft\n---\n\nRendered body.",
+    );
+    const app = createApp({ root });
+
+    const body = await app.fetch(new Request("http://reef.local/posts/hello")).then((res) => res.text());
+
+    expect(body).toContain('<nav><a class="button" href="/new">Create</a></nav>');
+    expect(body).not.toContain('<nav><a href="/posts/hello/edit">Edit</a>');
+    expect(body.indexOf("Rendered body.")).toBeLessThan(body.indexOf('class="article-actions"'));
+    expect(body).toContain('<a href="/posts/hello/edit">Edit</a>');
+    expect(body).toContain('<form method="post" action="/posts/hello/delete"');
+    expect(body).toContain("<button>Delete</button>");
+  });
+
+  test("deletes a local post from the rendered post actions", async () => {
+    const root = await tempRoot();
+    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite_id = "123"\n');
+    await Bun.write(
+      join(root, "posts", "hello.md"),
+      "---\ntitle: Hello\ndate: 2026-06-01\nstatus: local-draft\n---\n\nRendered body.",
+    );
+    const app = createApp({ root });
+
+    const response = await app.fetch(
+      new Request("http://reef.local/posts/hello/delete", {
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/");
+    await expect(Bun.file(join(root, "posts", "hello.md")).exists()).resolves.toBe(false);
+  });
+
   test("edits an existing local page from the editor", async () => {
     const root = await tempRoot();
     await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite_id = "123"\n');
