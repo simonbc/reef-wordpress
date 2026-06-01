@@ -513,7 +513,7 @@ textarea { border: 0; padding: 34px 0; min-height: 70vh; resize: none; outline: 
 .primary { background: var(--accent); }
 .article { max-width: 680px; margin: 80px auto; padding: 0 24px; font-family: Georgia, serif; font-size: 22px; line-height: 1.6; }
 .article h1 { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 42px; line-height: 1.1; }
-.article-actions { margin-top: 48px; display: flex; gap: 18px; align-items: center; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 15px; color: var(--muted); }
+.article-actions { margin-top: 24px; display: flex; gap: 18px; align-items: center; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 15px; color: var(--muted); }
 .article-actions a { border-bottom: 1px solid var(--line); }
 .article-actions form { margin: 0; }
 .article-actions button { appearance: none; border: 0; background: transparent; color: var(--muted); padding: 0; border-radius: 0; border-bottom: 1px solid var(--line); font: inherit; font-weight: 400; }
