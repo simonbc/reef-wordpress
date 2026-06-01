@@ -253,6 +253,7 @@ describe("browser app", () => {
     expect(body.indexOf("Rendered body.")).toBeLessThan(body.indexOf('class="article-actions"'));
     expect(body).toContain('<a href="/posts/hello/edit">Edit</a>');
     expect(body).toContain('<form method="post" action="/posts/hello/delete"');
+    expect(body).toContain("confirm('Delete this local post?");
     expect(body).toContain("<button>Delete</button>");
   });
 
@@ -273,6 +274,53 @@ describe("browser app", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("/");
+    await expect(Bun.file(join(root, "posts", "hello.md")).exists()).resolves.toBe(false);
+  });
+
+  test("deletes a published WordPress.com post before deleting local source", async () => {
+    const root = await tempRoot();
+    await Bun.write(
+      join(root, "reef.toml"),
+      'title = "My Site"\n[wordpress_com]\nsite_id = "123"\nsite_url = "https://example.wordpress.com"\n',
+    );
+    await Bun.write(
+      join(root, "posts", "hello.md"),
+      "---\ntitle: Hello\ndate: 2026-06-01\nstatus: local-draft\n---\n\nRendered body.",
+    );
+    await mkdir(join(root, ".reef", "secrets"), { recursive: true });
+    await writeFile(
+      join(root, ".reef", "secrets", "wordpress-com.json"),
+      JSON.stringify({ accessToken: "oauth-token" }),
+    );
+    await mkdir(join(root, ".reef", "state"), { recursive: true });
+    await writeFile(
+      join(root, ".reef", "state", "wordpress-com.json"),
+      JSON.stringify({
+        "post:hello": {
+          remoteId: 42,
+          url: "https://example.wordpress.com/hello/",
+          status: "publish",
+        },
+      }),
+    );
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const app = createApp({
+      root,
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(url), init });
+        return Response.json({ deleted: true });
+      }) as typeof fetch,
+    });
+
+    const response = await app.fetch(
+      new Request("http://reef.local/posts/hello/delete", {
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(303);
+    expect(requests[0].url).toBe("https://public-api.wordpress.com/wp/v2/sites/123/posts/42");
+    expect(requests[0].init?.method).toBe("DELETE");
     await expect(Bun.file(join(root, "posts", "hello.md")).exists()).resolves.toBe(false);
   });
 

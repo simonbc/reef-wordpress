@@ -179,6 +179,18 @@ async function handleRequest(
   if (request.method === "POST" && deleteMatch) {
     const type = deleteMatch[1] === "pages" ? "page" : "post";
     const slug = decodeURIComponent(deleteMatch[2]);
+    const document = await store.read(`${type}:${slug}`);
+    if (!document) {
+      return htmlResponse(renderLayout(config.title, "<p>Not found.</p>"), 404);
+    }
+    if (document.wordpress) {
+      await deleteFromWordPress({
+        root,
+        config,
+        document,
+        fetch: app.fetch,
+      });
+    }
     const deleted = await store.delete(`${type}:${slug}`);
     if (!deleted) {
       return htmlResponse(renderLayout(config.title, "<p>Not found.</p>"), 404);
@@ -393,10 +405,14 @@ function renderDocument(siteTitle: string, document: ReefDocument): string {
 
 function renderArticleActions(document: ReefDocument): string {
   const path = `/${document.type === "post" ? "posts" : "pages"}/${encodeURIComponent(document.slug)}`;
+  const kind = document.type === "post" ? "post" : "page";
+  const message = document.wordpress
+    ? `Delete this local ${kind} and its WordPress.com ${kind}?`
+    : `Delete this local ${kind}?`;
   return [
     '<div class="article-actions">',
     `<a href="${path}/edit">Edit</a>`,
-    `<form method="post" action="${path}/delete">`,
+    `<form method="post" action="${path}/delete" onsubmit="return confirm('${escapeHtml(message)}')">`,
     "<button>Delete</button>",
     "</form>",
     "</div>",
@@ -568,6 +584,33 @@ async function syncWordPress(input: {
         remoteId: input.document.wordpress.remoteId,
       })
     : client.publish(payload);
+}
+
+async function deleteFromWordPress(input: {
+  root: string;
+  config: Awaited<ReturnType<typeof loadConfig>>;
+  document: ReefDocument;
+  fetch?: typeof fetch;
+}): Promise<void> {
+  if (!input.config.wordpressCom) {
+    throw new Error("WordPress.com is not configured.");
+  }
+  if (!input.document.wordpress) {
+    return;
+  }
+  const token = await readWordPressToken(input.root);
+  if (!token) {
+    throw new Error("WordPress.com token is missing. Reconnect WordPress.com.");
+  }
+  const client = createWordPressComClient({
+    site: input.config.wordpressCom.siteId,
+    token,
+    fetch: input.fetch,
+  });
+  await client.delete({
+    type: input.document.type,
+    remoteId: input.document.wordpress.remoteId,
+  });
 }
 
 function publishIntent(form: FormData): "draft" | "publish" | null {

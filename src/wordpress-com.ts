@@ -20,6 +20,10 @@ type WordPressComClient = {
     html: string;
     status: "draft" | "publish";
   }): Promise<WordPressState>;
+  delete(input: {
+    type: DocumentType;
+    remoteId: number;
+  }): Promise<void>;
 };
 
 export function createWordPressComClient(input: {
@@ -54,6 +58,15 @@ export function createWordPressComClient(input: {
         }),
       });
       return parseResult(response);
+    },
+    delete: async (document) => {
+      const response = await runFetch(`${baseUrl}/${collection(document.type)}/${document.remoteId}`, {
+        method: "DELETE",
+        headers: headers(input.token),
+      });
+      if (!response.ok) {
+        throw new Error(`WordPress.com delete failed: ${response.status} ${response.statusText}`);
+      }
     },
   };
 }
