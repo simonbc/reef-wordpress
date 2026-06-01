@@ -152,11 +152,15 @@ describe("browser app", () => {
 
   test("serves a calm writing-first home screen after WordPress.com is configured", async () => {
     const root = await tempRoot();
-    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite_id = "123"\n');
+    await Bun.write(
+      join(root, "reef.toml"),
+      'title = "My Site"\n[wordpress_com]\nsite_id = "123"\nsite_url = "https://example.wordpress.com"\n',
+    );
     const app = createApp({ root });
     const body = await app.fetch(new Request("http://reef.local/")).then((res) => res.text());
 
     expect(body).toContain("<title>My Site - Reef</title>");
+    expect(body).toContain('<a href="https://example.wordpress.com" target="_blank" rel="noopener">View site</a>');
     expect(body).toContain("Create");
     expect(body).toContain("Posts");
     expect(body).toContain("Pages");

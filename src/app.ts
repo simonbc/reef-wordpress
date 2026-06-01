@@ -188,7 +188,12 @@ async function handleRequest(
 
   if (url.pathname === "/") {
     const [posts, pages] = await Promise.all([store.list("post"), store.list("page")]);
-    return htmlResponse(renderHome({ title: config.title, posts, pages }));
+    return htmlResponse(renderHome({
+      title: config.title,
+      siteUrl: config.wordpressCom.siteUrl,
+      posts,
+      pages,
+    }));
   }
 
   if (url.pathname === "/new") {
@@ -268,13 +273,13 @@ function renderSiteChoice(site: WordPressComSite): string {
   ].join("");
 }
 
-function renderHome(input: { title: string; posts: ReefDocument[]; pages: ReefDocument[] }): string {
+function renderHome(input: { title: string; siteUrl?: string; posts: ReefDocument[]; pages: ReefDocument[] }): string {
   return renderLayout(
     input.title,
     [
       '<header class="topbar">',
       '<a class="brand" href="/">Reef</a>',
-      '<nav><a href="/new?type=page">New page</a><a class="button" href="/new">Create</a></nav>',
+      `<nav>${input.siteUrl ? `<a href="${escapeHtml(input.siteUrl)}" target="_blank" rel="noopener">View site</a>` : ""}<a href="/new?type=page">New page</a><a class="button" href="/new">Create</a></nav>`,
       "</header>",
       '<main class="home">',
       '<section class="profile">',
