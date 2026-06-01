@@ -156,6 +156,7 @@ describe("browser app", () => {
     const app = createApp({ root });
     const body = await app.fetch(new Request("http://reef.local/")).then((res) => res.text());
 
+    expect(body).toContain("<title>My Site - Reef</title>");
     expect(body).toContain("Create");
     expect(body).toContain("Posts");
     expect(body).toContain("Pages");
@@ -175,6 +176,7 @@ describe("browser app", () => {
     expect(body).toContain('data-markdown-preview');
     expect(body).toContain("renderMarkdown");
     expect(body).toContain("Publish draft");
+    expect(body).toContain("Publish");
   });
 
   test("creates a local post from the editor", async () => {
@@ -313,6 +315,122 @@ describe("browser app", () => {
     await expect(
       readFile(join(root, ".reef", "state", "wordpress-com.json"), "utf8"),
     ).resolves.toContain("42");
+  });
+
+  test("publish saves locally and publishes live to WordPress.com", async () => {
+    const root = await tempRoot();
+    await Bun.write(
+      join(root, "reef.toml"),
+      'title = "My Site"\n[wordpress_com]\nsite_id = "123"\nsite_url = "https://example.wordpress.com"\n',
+    );
+    await mkdir(join(root, ".reef", "secrets"), { recursive: true });
+    await writeFile(
+      join(root, ".reef", "secrets", "wordpress-com.json"),
+      JSON.stringify({ accessToken: "oauth-token" }),
+    );
+    const requests: { url: string; init?: RequestInit; body: Record<string, unknown> }[] = [];
+    const app = createApp({
+      root,
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({
+          url: String(url),
+          init,
+          body: JSON.parse(String(init?.body)),
+        });
+        return Response.json({
+          id: 43,
+          link: "https://example.wordpress.com/publish-me-live/",
+          status: "publish",
+        });
+      }) as typeof fetch,
+    });
+    const form = new FormData();
+    form.set("type", "post");
+    form.set("title", "Publish Me Live");
+    form.set("markdown", "Live body.");
+    form.set("intent", "publish");
+
+    const response = await app.fetch(
+      new Request("http://reef.local/documents", {
+        method: "POST",
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/posts/publish-me-live");
+    expect(requests[0].body).toMatchObject({
+      title: "Publish Me Live",
+      status: "publish",
+    });
+    await expect(
+      readFile(join(root, ".reef", "state", "wordpress-com.json"), "utf8"),
+    ).resolves.toContain('"status": "publish"');
+  });
+
+  test("publish updates a previously published WordPress.com post", async () => {
+    const root = await tempRoot();
+    await Bun.write(
+      join(root, "reef.toml"),
+      'title = "My Site"\n[wordpress_com]\nsite_id = "123"\nsite_url = "https://example.wordpress.com"\n',
+    );
+    await mkdir(join(root, ".reef", "secrets"), { recursive: true });
+    await writeFile(
+      join(root, ".reef", "secrets", "wordpress-com.json"),
+      JSON.stringify({ accessToken: "oauth-token" }),
+    );
+    await Bun.write(
+      join(root, "posts", "hello.md"),
+      "---\ntitle: Hello\ndate: 2026-06-01\nstatus: local-draft\n---\n\nOriginal body.",
+    );
+    await mkdir(join(root, ".reef", "state"), { recursive: true });
+    await writeFile(
+      join(root, ".reef", "state", "wordpress-com.json"),
+      JSON.stringify({
+        "post:hello": {
+          remoteId: 42,
+          url: "https://example.wordpress.com/hello/",
+          status: "draft",
+        },
+      }),
+    );
+    const requests: { url: string; init?: RequestInit; body: Record<string, unknown> }[] = [];
+    const app = createApp({
+      root,
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({
+          url: String(url),
+          init,
+          body: JSON.parse(String(init?.body)),
+        });
+        return Response.json({
+          id: 42,
+          link: "https://example.wordpress.com/hello/",
+          status: "publish",
+        });
+      }) as typeof fetch,
+    });
+    const form = new FormData();
+    form.set("title", "Hello");
+    form.set("markdown", "Updated live body.");
+    form.set("intent", "publish");
+
+    const response = await app.fetch(
+      new Request("http://reef.local/posts/hello", {
+        method: "POST",
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(303);
+    expect(requests[0].url).toBe("https://public-api.wordpress.com/wp/v2/sites/123/posts/42");
+    expect(requests[0].body).toMatchObject({
+      status: "publish",
+      content: expect.stringContaining("Updated live body."),
+    });
+    await expect(
+      readFile(join(root, ".reef", "state", "wordpress-com.json"), "utf8"),
+    ).resolves.toContain('"status": "publish"');
   });
 });
 

@@ -135,11 +135,13 @@ async function handleRequest(
       title,
       markdown,
     });
-    if (stringField(form, "intent") === "publish-draft") {
-      const published = await publishDraft({
+    const intent = publishIntent(form);
+    if (intent) {
+      const published = await syncWordPress({
         root,
         config,
         document,
+        status: intent,
         fetch: app.fetch,
       });
       await store.setWordPressState(document.id, published);
@@ -158,6 +160,17 @@ async function handleRequest(
     });
     if (!document) {
       return htmlResponse(renderLayout(config.title, "<p>Not found.</p>"), 404);
+    }
+    const intent = publishIntent(form);
+    if (intent) {
+      const published = await syncWordPress({
+        root,
+        config,
+        document,
+        status: intent,
+        fetch: app.fetch,
+      });
+      await store.setWordPressState(document.id, published);
     }
     return redirect(`/${type === "post" ? "posts" : "pages"}/${document.slug}`);
   }
@@ -297,6 +310,7 @@ function renderEditor(input: { title: string; type: DocumentType; document?: Ree
       `<span class="slug-pill">/${document?.slug ?? "set-slug"}</span>`,
       '<button type="submit">Save locally</button>',
       '<button type="submit" name="intent" value="publish-draft" class="primary">Publish draft</button>',
+      '<button type="submit" name="intent" value="publish" class="primary">Publish</button>',
       '<a href="/">Cancel</a>',
       "</footer>",
       "</form>",
@@ -392,7 +406,7 @@ function renderLayout(
     "<head>",
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>${escapeHtml(title)}</title>`,
+    `<title>${escapeHtml(pageTitle(title))}</title>`,
     "<style>",
     styles(),
     "</style>",
@@ -464,6 +478,10 @@ textarea { border: 0; padding: 34px 0; min-height: 70vh; resize: none; outline: 
 `;
 }
 
+function pageTitle(title: string): string {
+  return title.endsWith(" - Reef") ? title : `${title} - Reef`;
+}
+
 function stringField(form: FormData, name: string): string {
   const value = form.get(name);
   return typeof value === "string" ? value.trim() : "";
@@ -484,10 +502,11 @@ function callbackUrl(url: URL): string {
   return `${url.origin}/auth/wordpress/callback`;
 }
 
-async function publishDraft(input: {
+async function syncWordPress(input: {
   root: string;
   config: Awaited<ReturnType<typeof loadConfig>>;
   document: ReefDocument;
+  status: "draft" | "publish";
   fetch?: typeof fetch;
 }) {
   if (!input.config.wordpressCom) {
@@ -502,12 +521,31 @@ async function publishDraft(input: {
     token,
     fetch: input.fetch,
   });
-  return client.publish({
+
+  const payload = {
     type: input.document.type,
     title: input.document.title,
     html: markdownToHtml(input.document.markdown),
-    status: "draft",
-  });
+    status: input.status,
+  } as const;
+
+  return input.document.wordpress
+    ? client.update({
+        ...payload,
+        remoteId: input.document.wordpress.remoteId,
+      })
+    : client.publish(payload);
+}
+
+function publishIntent(form: FormData): "draft" | "publish" | null {
+  const intent = stringField(form, "intent");
+  if (intent === "publish-draft") {
+    return "draft";
+  }
+  if (intent === "publish") {
+    return "publish";
+  }
+  return null;
 }
 
 async function saveDiscoveredSites(root: string, sites: WordPressComSite[]): Promise<void> {
