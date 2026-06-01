@@ -57,7 +57,7 @@ async function updateDocument(
 }
 
 async function saveDocument(root: string, input: SaveDocumentInput): Promise<ReefDocument> {
-  const slug = input.slug?.trim() || slugify(input.title);
+  const slug = input.slug?.trim() || (await uniqueSlug(root, input.type, slugify(input.title)));
   const date = input.date ?? new Date().toISOString().slice(0, 10);
   const status = input.status ?? "local-draft";
   const markdown = [
@@ -82,6 +82,16 @@ async function saveDocument(root: string, input: SaveDocumentInput): Promise<Ree
     status,
     wordpress: (await readWordPressStates(root))[documentId(input.type, slug)],
   };
+}
+
+async function uniqueSlug(root: string, type: DocumentType, baseSlug: string): Promise<string> {
+  let slug = baseSlug;
+  let suffix = 2;
+  while (await Bun.file(contentPath(root, type, slug)).exists()) {
+    slug = `${baseSlug}-${suffix}`;
+    suffix += 1;
+  }
+  return slug;
 }
 
 async function listDocuments(root: string, type: DocumentType): Promise<ReefDocument[]> {

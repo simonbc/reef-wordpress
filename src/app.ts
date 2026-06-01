@@ -9,10 +9,15 @@ import {
   readOAuthState,
   saveOAuthState,
   saveWordPressToken,
+  readWordPressToken,
   type WordPressOAuthConfig,
 } from "./oauth";
 import { createDocumentStore } from "./store";
-import { listWordPressComSites, type WordPressComSite } from "./wordpress-com";
+import {
+  createWordPressComClient,
+  listWordPressComSites,
+  type WordPressComSite,
+} from "./wordpress-com";
 
 export type App = {
   fetch(request: Request): Promise<Response>;
@@ -123,11 +128,22 @@ async function handleRequest(
   if (request.method === "POST" && url.pathname === "/documents") {
     const form = await request.formData();
     const type = stringField(form, "type") === "page" ? "page" : "post";
+    const title = stringField(form, "title") || "Untitled";
+    const markdown = stringField(form, "markdown");
     const document = await store.save({
       type,
-      title: stringField(form, "title") || "Untitled",
-      markdown: stringField(form, "markdown"),
+      title,
+      markdown,
     });
+    if (stringField(form, "intent") === "publish-draft") {
+      const published = await publishDraft({
+        root,
+        config,
+        document,
+        fetch: app.fetch,
+      });
+      await store.setWordPressState(document.id, published);
+    }
     return redirect(`/${type === "post" ? "posts" : "pages"}/${document.slug}`);
   }
 
@@ -280,7 +296,7 @@ function renderEditor(input: { title: string; type: DocumentType; document?: Ree
       `<span>${input.type === "post" ? "Post" : "Page"}</span>`,
       `<span class="slug-pill">/${document?.slug ?? "set-slug"}</span>`,
       '<button type="submit">Save locally</button>',
-      '<button type="button" class="primary">Publish draft</button>',
+      '<button type="submit" name="intent" value="publish-draft" class="primary">Publish draft</button>',
       '<a href="/">Cancel</a>',
       "</footer>",
       "</form>",
@@ -428,6 +444,32 @@ function redirect(location: string): Response {
 
 function callbackUrl(url: URL): string {
   return `${url.origin}/auth/wordpress/callback`;
+}
+
+async function publishDraft(input: {
+  root: string;
+  config: Awaited<ReturnType<typeof loadConfig>>;
+  document: ReefDocument;
+  fetch?: typeof fetch;
+}) {
+  if (!input.config.wordpressCom) {
+    throw new Error("WordPress.com is not configured.");
+  }
+  const token = await readWordPressToken(input.root);
+  if (!token) {
+    throw new Error("WordPress.com token is missing. Reconnect WordPress.com.");
+  }
+  const client = createWordPressComClient({
+    site: input.config.wordpressCom.siteId,
+    token,
+    fetch: input.fetch,
+  });
+  return client.publish({
+    type: input.document.type,
+    title: input.document.title,
+    html: markdownToHtml(input.document.markdown),
+    status: "draft",
+  });
 }
 
 async function saveDiscoveredSites(root: string, sites: WordPressComSite[]): Promise<void> {

@@ -28,6 +28,31 @@ describe("document store", () => {
     );
   });
 
+  test("creates unique slugs for documents with duplicate titles", async () => {
+    const root = await tempRoot();
+    const store = createDocumentStore(root);
+
+    const first = await store.save({
+      type: "post",
+      title: "Hello, world",
+      markdown: "First.",
+    });
+    const second = await store.save({
+      type: "post",
+      title: "Hello, world",
+      markdown: "Second.",
+    });
+
+    expect(first.slug).toBe("hello-world");
+    expect(second.slug).toBe("hello-world-2");
+    await expect(readFile(join(root, "posts", "hello-world.md"), "utf8")).resolves.toContain(
+      "First.",
+    );
+    await expect(readFile(join(root, "posts", "hello-world-2.md"), "utf8")).resolves.toContain(
+      "Second.",
+    );
+  });
+
   test("lists posts newest first and pages alphabetically", async () => {
     const root = await tempRoot();
     const store = createDocumentStore(root);

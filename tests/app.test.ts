@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApp } from "../src/app";
@@ -258,6 +258,58 @@ describe("browser app", () => {
     await expect(Bun.file(join(root, "pages", "about.md")).text()).resolves.toContain(
       "Updated page.",
     );
+  });
+
+  test("publish draft saves locally and publishes to WordPress.com draft", async () => {
+    const root = await tempRoot();
+    await Bun.write(
+      join(root, "reef.toml"),
+      'title = "My Site"\n[wordpress_com]\nsite_id = "123"\nsite_url = "https://example.wordpress.com"\n',
+    );
+    await mkdir(join(root, ".reef", "secrets"), { recursive: true });
+    await writeFile(
+      join(root, ".reef", "secrets", "wordpress-com.json"),
+      JSON.stringify({ accessToken: "oauth-token" }),
+    );
+    const requests: { url: string; init?: RequestInit; body: Record<string, unknown> }[] = [];
+    const app = createApp({
+      root,
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({
+          url: String(url),
+          init,
+          body: JSON.parse(String(init?.body)),
+        });
+        return Response.json({
+          id: 42,
+          link: "https://example.wordpress.com/hello/",
+          status: "draft",
+        });
+      }) as typeof fetch,
+    });
+    const form = new FormData();
+    form.set("type", "post");
+    form.set("title", "Publish Me");
+    form.set("markdown", "Draft body.");
+    form.set("intent", "publish-draft");
+
+    const response = await app.fetch(
+      new Request("http://reef.local/documents", {
+        method: "POST",
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/posts/publish-me");
+    expect(requests[0].url).toBe("https://public-api.wordpress.com/wp/v2/sites/123/posts");
+    expect(requests[0].body).toMatchObject({
+      title: "Publish Me",
+      status: "draft",
+    });
+    await expect(
+      readFile(join(root, ".reef", "state", "wordpress-com.json"), "utf8"),
+    ).resolves.toContain("42");
   });
 });
 
