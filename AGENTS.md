@@ -85,12 +85,14 @@ site_url = "https://example.wordpress.com"
 Do not store WordPress.com tokens in `reef.toml`.
 
 The local app needs WordPress.com OAuth app credentials from environment
-variables:
+variables or a local `.env` file:
 
 ```sh
 REEF_WORDPRESS_COM_CLIENT_ID
 REEF_WORDPRESS_COM_CLIENT_SECRET
 ```
+
+Do not commit `.env`.
 
 The local OAuth callback URL is:
 

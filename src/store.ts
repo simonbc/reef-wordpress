@@ -11,6 +11,7 @@ import {
 
 type DocumentStore = {
   save(input: SaveDocumentInput): Promise<ReefDocument>;
+  update(id: string, input: { title: string; markdown: string }): Promise<ReefDocument | null>;
   list(type: DocumentType): Promise<ReefDocument[]>;
   read(id: string): Promise<ReefDocument | null>;
   setWordPressState(id: string, state: WordPressState): Promise<void>;
@@ -19,9 +20,39 @@ type DocumentStore = {
 export function createDocumentStore(root: string): DocumentStore {
   return {
     save: (input) => saveDocument(root, input),
+    update: (id, input) => updateDocument(root, id, input),
     list: (type) => listDocuments(root, type),
     read: (id) => readDocument(root, id),
     setWordPressState: (id, state) => setWordPressState(root, id, state),
+  };
+}
+
+async function updateDocument(
+  root: string,
+  id: string,
+  input: { title: string; markdown: string },
+): Promise<ReefDocument | null> {
+  const existing = await readDocument(root, id);
+  if (!existing) {
+    return null;
+  }
+
+  const status = existing.wordpress ? "changed-locally" : existing.status;
+  const markdown = [
+    "---",
+    `title: ${input.title}`,
+    `date: ${existing.date}`,
+    `status: ${status}`,
+    "---",
+    "",
+    input.markdown,
+  ].join("\n");
+  await writeFile(contentPath(root, existing.type, existing.slug), markdown);
+  return {
+    ...existing,
+    title: input.title,
+    markdown: input.markdown,
+    status,
   };
 }
 

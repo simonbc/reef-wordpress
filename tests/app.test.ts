@@ -193,6 +193,72 @@ describe("browser app", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("/posts/a-quiet-start");
   });
+
+  test("edits an existing local post from the editor", async () => {
+    const root = await tempRoot();
+    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite_id = "123"\n');
+    await Bun.write(
+      join(root, "posts", "hello.md"),
+      "---\ntitle: Hello\ndate: 2026-06-01\nstatus: local-draft\n---\n\nOriginal body.",
+    );
+    const app = createApp({ root });
+
+    const editor = await app
+      .fetch(new Request("http://reef.local/posts/hello/edit"))
+      .then((res) => res.text());
+    expect(editor).toContain('value="Hello"');
+    expect(editor).toContain("Original body.");
+    expect(editor).toContain('action="/posts/hello"');
+
+    const form = new FormData();
+    form.set("title", "Hello Edited");
+    form.set("markdown", "Updated body.");
+
+    const response = await app.fetch(
+      new Request("http://reef.local/posts/hello", {
+        method: "POST",
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/posts/hello");
+    await expect(Bun.file(join(root, "posts", "hello.md")).text()).resolves.toContain(
+      "Updated body.",
+    );
+  });
+
+  test("edits an existing local page from the editor", async () => {
+    const root = await tempRoot();
+    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite_id = "123"\n');
+    await Bun.write(
+      join(root, "pages", "about.md"),
+      "---\ntitle: About\ndate: 2026-06-01\nstatus: local-draft\n---\n\nOriginal page.",
+    );
+    const app = createApp({ root });
+
+    const editor = await app
+      .fetch(new Request("http://reef.local/pages/about/edit"))
+      .then((res) => res.text());
+    expect(editor).toContain("Original page.");
+
+    const form = new FormData();
+    form.set("title", "About");
+    form.set("markdown", "Updated page.");
+
+    const response = await app.fetch(
+      new Request("http://reef.local/pages/about", {
+        method: "POST",
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/pages/about");
+    await expect(Bun.file(join(root, "pages", "about.md")).text()).resolves.toContain(
+      "Updated page.",
+    );
+  });
 });
 
 async function tempRoot(): Promise<string> {

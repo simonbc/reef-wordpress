@@ -1,6 +1,9 @@
 #!/usr/bin/env bun
 import { spawn } from "node:child_process";
+import { loadDotEnv } from "../src/env";
 import { oauthConfigFromEnv, startServer } from "../src/server";
+
+await loadDotEnv(process.cwd());
 
 const port = Number(process.env.REEF_PORT ?? "3000");
 if (!Number.isInteger(port) || port < 1 || port > 65535) {

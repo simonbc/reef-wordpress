@@ -21,6 +21,13 @@ export REEF_WORDPRESS_COM_CLIENT_SECRET="..."
 bun run start
 ```
 
+Or put them in `.env`:
+
+```sh
+REEF_WORDPRESS_COM_CLIENT_ID=...
+REEF_WORDPRESS_COM_CLIENT_SECRET=...
+```
+
 The local OAuth callback URL is:
 
 ```text

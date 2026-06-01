@@ -1,0 +1,6 @@
+.env
+.reef/
+reef.toml
+posts/
+pages/
+media/

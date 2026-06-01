@@ -131,6 +131,21 @@ async function handleRequest(
     return redirect(`/${type === "post" ? "posts" : "pages"}/${document.slug}`);
   }
 
+  const updateMatch = url.pathname.match(/^\/(posts|pages)\/([^/]+)$/);
+  if (request.method === "POST" && updateMatch) {
+    const type = updateMatch[1] === "pages" ? "page" : "post";
+    const slug = decodeURIComponent(updateMatch[2]);
+    const form = await request.formData();
+    const document = await store.update(`${type}:${slug}`, {
+      title: stringField(form, "title") || "Untitled",
+      markdown: stringField(form, "markdown"),
+    });
+    if (!document) {
+      return htmlResponse(renderLayout(config.title, "<p>Not found.</p>"), 404);
+    }
+    return redirect(`/${type === "post" ? "posts" : "pages"}/${document.slug}`);
+  }
+
   if (url.pathname === "/") {
     const [posts, pages] = await Promise.all([store.list("post"), store.list("page")]);
     return htmlResponse(renderHome({ title: config.title, posts, pages }));
@@ -139,6 +154,16 @@ async function handleRequest(
   if (url.pathname === "/new") {
     const type = url.searchParams.get("type") === "page" ? "page" : "post";
     return htmlResponse(renderEditor({ title: config.title, type }));
+  }
+
+  const editMatch = url.pathname.match(/^\/(posts|pages)\/([^/]+)\/edit$/);
+  if (editMatch) {
+    const type = editMatch[1] === "pages" ? "page" : "post";
+    const document = await store.read(`${type}:${decodeURIComponent(editMatch[2])}`);
+    if (!document) {
+      return htmlResponse(renderLayout(config.title, "<p>Not found.</p>"), 404);
+    }
+    return htmlResponse(renderEditor({ title: config.title, type, document }));
   }
 
   const contentMatch = url.pathname.match(/^\/(posts|pages)\/([^/]+)$/);
@@ -233,10 +258,13 @@ function renderHome(input: { title: string; posts: ReefDocument[]; pages: ReefDo
 function renderEditor(input: { title: string; type: DocumentType; document?: ReefDocument }): string {
   const document = input.document;
   const markdown = document?.markdown ?? "";
+  const action = document
+    ? `/${input.type === "post" ? "posts" : "pages"}/${encodeURIComponent(document.slug)}`
+    : "/documents";
   return renderLayout(
     input.title,
     [
-      '<form method="post" action="/documents" class="editor-shell">',
+      `<form method="post" action="${action}" class="editor-shell">`,
       '<section class="editor-pane">',
       '<div class="editor-title-row">',
       `<input class="title-input" name="title" placeholder="# Title" value="${escapeHtml(document?.title ?? "")}">`,
@@ -250,7 +278,7 @@ function renderEditor(input: { title: string; type: DocumentType; document?: Ree
       "</section>",
       '<footer class="editor-actions">',
       `<span>${input.type === "post" ? "Post" : "Page"}</span>`,
-      '<span class="slug-pill">/set-slug</span>',
+      `<span class="slug-pill">/${document?.slug ?? "set-slug"}</span>`,
       '<button type="submit">Save locally</button>',
       '<button type="button" class="primary">Publish draft</button>',
       '<a href="/">Cancel</a>',
@@ -267,7 +295,7 @@ function renderDocument(siteTitle: string, document: ReefDocument): string {
     [
       '<header class="topbar">',
       '<a class="brand" href="/">Reef</a>',
-      '<nav><a class="button" href="/new">Create</a></nav>',
+      `<nav><a href="/${document.type === "post" ? "posts" : "pages"}/${encodeURIComponent(document.slug)}/edit">Edit</a><a class="button" href="/new">Create</a></nav>`,
       "</header>",
       '<main class="article">',
       `<h1>${escapeHtml(document.title)}</h1>`,
