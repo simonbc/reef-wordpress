@@ -9,14 +9,16 @@ export type WordPressOAuthConfig = {
 export function buildWordPressAuthorizeUrl(input: {
   clientId: string;
   redirectUri: string;
-  site: string;
+  site?: string;
   state: string;
 }): string {
   const url = new URL("https://public-api.wordpress.com/oauth2/authorize");
   url.searchParams.set("client_id", input.clientId);
   url.searchParams.set("redirect_uri", input.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("blog", input.site);
+  if (input.site) {
+    url.searchParams.set("blog", input.site);
+  }
   url.searchParams.set("scope", "global");
   url.searchParams.set("state", input.state);
   return url.toString();

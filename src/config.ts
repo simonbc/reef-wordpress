@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 export type ReefConfig = {
   title: string;
   wordpressCom: {
-    site: string;
+    siteId: string;
+    siteUrl?: string;
   } | null;
 };
 
@@ -18,11 +19,14 @@ export async function loadConfig(root: string): Promise<ReefConfig> {
 
   const title = readTomlString(source, "title") ?? "Reef";
   const wordpressSection = readSection(source, "wordpress_com");
-  const site = wordpressSection ? readTomlString(wordpressSection, "site") : null;
+  const siteId =
+    (wordpressSection ? readTomlString(wordpressSection, "site_id") : null) ??
+    (wordpressSection ? readTomlString(wordpressSection, "site") : null);
+  const siteUrl = wordpressSection ? readTomlString(wordpressSection, "site_url") : null;
 
   return {
     title,
-    wordpressCom: site ? { site } : null,
+    wordpressCom: siteId ? { siteId, ...(siteUrl ? { siteUrl } : {}) } : null,
   };
 }
 
@@ -32,15 +36,19 @@ export async function isConfigured(root: string): Promise<boolean> {
 
 export async function saveWordPressComConfig(
   root: string,
-  input: { title: string; site: string },
+  input: { title: string; siteId: string; siteUrl?: string },
 ): Promise<void> {
-  const source = [
+  const lines = [
     `title = ${tomlString(input.title.trim() || "Reef")}`,
     "",
     "[wordpress_com]",
-    `site = ${tomlString(input.site.trim())}`,
-    "",
-  ].join("\n");
+    `site_id = ${tomlString(input.siteId.trim())}`,
+  ];
+  if (input.siteUrl?.trim()) {
+    lines.push(`site_url = ${tomlString(input.siteUrl.trim())}`);
+  }
+  lines.push("");
+  const source = lines.join("\n");
   const path = join(root, "reef.toml");
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, source);

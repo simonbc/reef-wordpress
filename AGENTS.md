@@ -54,15 +54,15 @@ git-friendly.
 
 ## First-Run Flow
 
-If `reef.toml` does not exist, or `[wordpress_com].site` is missing, the UI
+If `reef.toml` does not exist, or `[wordpress_com].site_id` is missing, the UI
 should show a setup screen before the writing UI.
 
-The setup screen should ask for:
+The setup screen should not ask for a site title or site address. It should show
+one primary action: connect WordPress.com. After OAuth, Reef calls WordPress.com
+to discover the user's sites. If one site is returned, select it automatically.
+If multiple sites are returned, show a calm site picker.
 
-- site title
-- WordPress.com site, e.g. `example.wordpress.com`
-
-The setup action starts WordPress.com OAuth and writes `reef.toml`.
+The successful setup flow writes `reef.toml`.
 
 Do not ask for the actual token in the UI. OAuth tokens are written to
 `.reef/secrets/wordpress-com.json` for the prototype. A later version can use the
@@ -78,7 +78,8 @@ Store non-secret WordPress.com settings there:
 title = "My Site"
 
 [wordpress_com]
-site = "example.wordpress.com"
+site_id = "123456"
+site_url = "https://example.wordpress.com"
 ```
 
 Do not store WordPress.com tokens in `reef.toml`.

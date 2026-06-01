@@ -1,5 +1,11 @@
 import type { DocumentType, WordPressState } from "./domain";
 
+export type WordPressComSite = {
+  id: string;
+  title: string;
+  url: string;
+};
+
 type WordPressComClient = {
   publish(input: {
     type: DocumentType;
@@ -50,6 +56,42 @@ export function createWordPressComClient(input: {
       return parseResult(response);
     },
   };
+}
+
+export async function listWordPressComSites(input: {
+  token: string;
+  fetch?: typeof fetch;
+}): Promise<WordPressComSite[]> {
+  const response = await (input.fetch ?? fetch)(
+    "https://public-api.wordpress.com/rest/v1.1/me/sites",
+    {
+      headers: {
+        authorization: `Bearer ${input.token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`WordPress.com sites request failed: ${response.status}`);
+  }
+
+  const json = (await response.json()) as Record<string, unknown>;
+  const sites = Array.isArray(json.sites) ? json.sites : [];
+  return sites.flatMap((site) => {
+    if (!site || typeof site !== "object") {
+      return [];
+    }
+    const record = site as Record<string, unknown>;
+    const id = typeof record.ID === "number" || typeof record.ID === "string" ? String(record.ID) : "";
+    const title =
+      typeof record.name === "string"
+        ? record.name
+        : typeof record.title === "string"
+          ? record.title
+          : id;
+    const url = typeof record.URL === "string" ? record.URL : typeof record.url === "string" ? record.url : "";
+    return id ? [{ id, title, url }] : [];
+  });
 }
 
 function collection(type: DocumentType): string {

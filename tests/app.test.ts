@@ -17,12 +17,12 @@ describe("browser app", () => {
     const body = await app.fetch(new Request("http://reef.local/")).then((res) => res.text());
 
     expect(body).toContain("Connect WordPress.com");
-    expect(body).toContain('name="site"');
     expect(body).toContain("/auth/wordpress/start");
+    expect(body).not.toContain('name="site"');
     expect(body).not.toContain("wp-admin");
   });
 
-  test("starts WordPress.com OAuth from the local setup form", async () => {
+  test("starts WordPress.com OAuth without requiring site details", async () => {
     const root = await tempRoot();
     const app = createApp({
       root,
@@ -32,14 +32,10 @@ describe("browser app", () => {
       },
       randomState: () => "state-abc",
     });
-    const form = new FormData();
-    form.set("title", "My Site");
-    form.set("site", "example.wordpress.com");
 
     const response = await app.fetch(
       new Request("http://localhost:3000/auth/wordpress/start", {
         method: "POST",
-        body: form,
       }),
     );
 
@@ -49,23 +45,16 @@ describe("browser app", () => {
     expect(location).toContain("client_id=client-123");
     expect(location).toContain("redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fwordpress%2Fcallback");
     expect(location).toContain("response_type=code");
-    expect(location).toContain("blog=example.wordpress.com");
+    expect(location).not.toContain("blog=");
     expect(location).toContain("scope=global");
     expect(location).toContain("state=state-abc");
-    await expect(readFile(join(root, "reef.toml"), "utf8")).resolves.toContain(
-      'site = "example.wordpress.com"',
-    );
     await expect(readFile(join(root, ".reef", "state", "oauth-state.json"), "utf8")).resolves.toContain(
       "state-abc",
     );
   });
 
-  test("handles WordPress.com OAuth callback and stores token outside reef.toml", async () => {
+  test("handles WordPress.com OAuth callback and auto-selects a single site", async () => {
     const root = await tempRoot();
-    await Bun.write(
-      join(root, "reef.toml"),
-      'title = "My Site"\n[wordpress_com]\nsite = "example.wordpress.com"\n',
-    );
     await Bun.write(join(root, ".reef", "state", "oauth-state.json"), '{"state":"state-abc"}');
     const requests: { url: string; init?: RequestInit; body: URLSearchParams }[] = [];
     const app = createApp({
@@ -80,6 +69,17 @@ describe("browser app", () => {
           init,
           body: new URLSearchParams(String(init?.body)),
         });
+        if (String(url).endsWith("/me/sites")) {
+          return Response.json({
+            sites: [
+              {
+                ID: 123,
+                name: "Simon",
+                URL: "https://simon.wordpress.com",
+              },
+            ],
+          });
+        }
         return Response.json({ access_token: "oauth-token", token_type: "bearer" });
       }) as typeof fetch,
     });
@@ -103,14 +103,56 @@ describe("browser app", () => {
     await expect(
       readFile(join(root, ".reef", "secrets", "wordpress-com.json"), "utf8"),
     ).resolves.toContain("oauth-token");
-    await expect(readFile(join(root, "reef.toml"), "utf8")).resolves.not.toContain(
-      "oauth-token",
+    await expect(readFile(join(root, "reef.toml"), "utf8")).resolves.toContain(
+      'site_id = "123"',
     );
+    await expect(readFile(join(root, "reef.toml"), "utf8")).resolves.toContain(
+      'title = "Simon"',
+    );
+    await expect(readFile(join(root, "reef.toml"), "utf8")).resolves.not.toContain("oauth-token");
+  });
+
+  test("shows a site picker when WordPress.com returns multiple sites", async () => {
+    const root = await tempRoot();
+    await Bun.write(join(root, ".reef", "state", "oauth-state.json"), '{"state":"state-abc"}');
+    const app = createApp({
+      root,
+      wordpressOAuth: {
+        clientId: "client-123",
+        clientSecret: "secret",
+      },
+      fetch: (async (url: string | URL | Request) => {
+        if (String(url).endsWith("/me/sites")) {
+          return Response.json({
+            sites: [
+              { ID: 123, name: "Personal", URL: "https://personal.wordpress.com" },
+              { ID: 456, name: "Work", URL: "https://work.wordpress.com" },
+            ],
+          });
+        }
+        return Response.json({ access_token: "oauth-token", token_type: "bearer" });
+      }) as typeof fetch,
+    });
+
+    const response = await app.fetch(
+      new Request(
+        "http://localhost:3000/auth/wordpress/callback?code=code-123&state=state-abc",
+      ),
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("Choose a WordPress.com site");
+    expect(body).toContain("Personal");
+    expect(body).toContain("Work");
+    await expect(
+      readFile(join(root, ".reef", "state", "wordpress-sites.json"), "utf8"),
+    ).resolves.toContain("456");
   });
 
   test("serves a calm writing-first home screen after WordPress.com is configured", async () => {
     const root = await tempRoot();
-    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite = "example.wordpress.com"\n');
+    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite_id = "123"\n');
     const app = createApp({ root });
     const body = await app.fetch(new Request("http://reef.local/")).then((res) => res.text());
 
@@ -123,7 +165,7 @@ describe("browser app", () => {
 
   test("serves a split markdown editor and preview", async () => {
     const root = await tempRoot();
-    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite = "example.wordpress.com"\n');
+    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite_id = "123"\n');
     const app = createApp({ root });
     const body = await app.fetch(new Request("http://reef.local/new")).then((res) => res.text());
 
@@ -134,7 +176,7 @@ describe("browser app", () => {
 
   test("creates a local post from the editor", async () => {
     const root = await tempRoot();
-    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite = "example.wordpress.com"\n');
+    await Bun.write(join(root, "reef.toml"), 'title = "My Site"\n[wordpress_com]\nsite_id = "123"\n');
     const app = createApp({ root });
     const form = new FormData();
     form.set("type", "post");

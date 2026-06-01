@@ -16,7 +16,8 @@ describe("project config", () => {
 
     await saveWordPressComConfig(root, {
       title: "Simon",
-      site: "simon.wordpress.com",
+      siteId: "123",
+      siteUrl: "https://simon.wordpress.com",
     });
 
     await expect(readFile(join(root, "reef.toml"), "utf8")).resolves.toBe(
@@ -24,14 +25,16 @@ describe("project config", () => {
         'title = "Simon"',
         "",
         "[wordpress_com]",
-        'site = "simon.wordpress.com"',
+        'site_id = "123"',
+        'site_url = "https://simon.wordpress.com"',
         "",
       ].join("\n"),
     );
     await expect(loadConfig(root)).resolves.toMatchObject({
       title: "Simon",
       wordpressCom: {
-        site: "simon.wordpress.com",
+        siteId: "123",
+        siteUrl: "https://simon.wordpress.com",
       },
     });
   });

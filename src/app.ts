@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { loadConfig, saveWordPressComConfig } from "./config";
 import type { DocumentType, ReefDocument } from "./domain";
 import { escapeHtml, markdownToHtml } from "./markdown";
@@ -10,6 +12,7 @@ import {
   type WordPressOAuthConfig,
 } from "./oauth";
 import { createDocumentStore } from "./store";
+import { listWordPressComSites, type WordPressComSite } from "./wordpress-com";
 
 export type App = {
   fetch(request: Request): Promise<Response>;
@@ -44,19 +47,12 @@ async function handleRequest(
       return htmlResponse(renderSetup("WordPress.com OAuth is not configured for this Reef app."), 400);
     }
 
-    const form = await request.formData();
-    const site = stringField(form, "site");
-    await saveWordPressComConfig(root, {
-      title: stringField(form, "title") || "Reef",
-      site,
-    });
     const state = app.randomState?.() ?? crypto.randomUUID();
     await saveOAuthState(root, state);
     return redirect(
       buildWordPressAuthorizeUrl({
         clientId: app.wordpressOAuth.clientId,
         redirectUri: callbackUrl(url),
-        site,
         state,
       }),
     );
@@ -82,15 +78,38 @@ async function handleRequest(
       fetch: app.fetch,
     });
     await saveWordPressToken(root, accessToken);
-    return redirect("/");
+    const sites = await listWordPressComSites({ token: accessToken, fetch: app.fetch });
+    if (sites.length === 0) {
+      return htmlResponse(
+        renderLayout("Connect WordPress.com", "<p>No WordPress.com sites were returned for this account.</p>"),
+        400,
+      );
+    }
+    if (sites.length === 1) {
+      await saveWordPressComConfig(root, {
+        title: sites[0].title,
+        siteId: sites[0].id,
+        siteUrl: sites[0].url,
+      });
+      return redirect("/");
+    }
+
+    await saveDiscoveredSites(root, sites);
+    return htmlResponse(renderSitePicker(sites));
   }
 
-  if (request.method === "POST" && url.pathname === "/setup") {
+  if (request.method === "POST" && url.pathname === "/auth/wordpress/site") {
     const form = await request.formData();
+    const siteId = stringField(form, "site_id");
+    const sites = await readDiscoveredSites(root);
+    const site = sites.find((candidate) => candidate.id === siteId);
+    if (!site) {
+      return htmlResponse(renderLayout("Choose site", "<p>That WordPress.com site was not found in this local session.</p>"), 400);
+    }
     await saveWordPressComConfig(root, {
-      title: stringField(form, "title") || "Reef",
-      site: stringField(form, "site"),
-      tokenEnv: stringField(form, "token_env") || "REEF_WORDPRESS_COM_TOKEN",
+      title: site.title,
+      siteId: site.id,
+      siteUrl: site.url,
     });
     return redirect("/");
   }
@@ -145,8 +164,6 @@ function renderSetup(error?: string): string {
       "<p>Start by connecting this local workspace to a WordPress.com site.</p>",
       error ? `<p class="error">${escapeHtml(error)}</p>` : "",
       '<form method="post" action="/auth/wordpress/start" class="setup-form">',
-      '<label>Site title<input name="title" placeholder="My Site"></label>',
-      '<label>WordPress.com site<input name="site" placeholder="example.wordpress.com" required></label>',
       '<button>Connect with WordPress.com</button>',
       "</form>",
       '<p class="setup-note">Reef stores the OAuth token locally under .reef/secrets, not in reef.toml.</p>',
@@ -154,6 +171,36 @@ function renderSetup(error?: string): string {
     ].join("\n"),
     { bare: true },
   );
+}
+
+function renderSitePicker(sites: WordPressComSite[]): string {
+  return renderLayout(
+    "Choose a WordPress.com site",
+    [
+      '<main class="setup">',
+      '<div class="brand">Reef</div>',
+      "<h1>Choose a WordPress.com site</h1>",
+      "<p>Pick the site this local workspace should publish to.</p>",
+      '<form method="post" action="/auth/wordpress/site" class="site-picker">',
+      sites.map(renderSiteChoice).join("\n"),
+      "<button>Use selected site</button>",
+      "</form>",
+      "</main>",
+    ].join("\n"),
+    { bare: true },
+  );
+}
+
+function renderSiteChoice(site: WordPressComSite): string {
+  return [
+    '<label class="site-choice">',
+    `<input type="radio" name="site_id" value="${escapeHtml(site.id)}" required>`,
+    "<span>",
+    `<strong>${escapeHtml(site.title)}</strong>`,
+    site.url ? `<small>${escapeHtml(site.url)}</small>` : "",
+    "</span>",
+    "</label>",
+  ].join("");
 }
 
 function renderHome(input: { title: string; posts: ReefDocument[]; pages: ReefDocument[] }): string {
@@ -277,14 +324,14 @@ function renderLayout(
 
 function styles(): string {
   return `
-:root { color-scheme: light; --paper: #f8f7f2; --ink: #222; --muted: #8f8a82; --line: #e8e4dc; --green: #15805f; }
+:root { color-scheme: light; --paper: #f8f7f2; --ink: #222; --muted: #8f8a82; --line: #e8e4dc; --accent: #3858e9; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 a { color: inherit; text-decoration: none; }
 .topbar { height: 88px; display: flex; align-items: center; justify-content: space-between; padding: 0 44px; border-bottom: 1px solid var(--line); background: rgba(248,247,242,.88); }
-.brand { color: var(--green); font-weight: 800; font-size: 28px; }
+.brand { color: var(--accent); font-weight: 800; font-size: 28px; }
 nav { display: flex; gap: 18px; align-items: center; color: #6f6a62; }
-.button, button { border: 0; border-radius: 999px; background: var(--green); color: white; padding: 11px 18px; font: inherit; font-weight: 700; cursor: pointer; }
+.button, button { border: 0; border-radius: 999px; background: var(--accent); color: white; padding: 11px 18px; font: inherit; font-weight: 700; cursor: pointer; }
 .home { max-width: 720px; margin: 72px auto; padding: 0 24px; }
 .profile { margin-bottom: 72px; }
 .profile h1 { margin: 0 0 6px; font-size: 28px; }
@@ -305,6 +352,11 @@ nav { display: flex; gap: 18px; align-items: center; color: #6f6a62; }
 .setup-form { display: grid; gap: 18px; margin-top: 34px; }
 .setup-note { font-size: 14px !important; }
 .error { color: #9f2d20 !important; }
+.site-picker { display: grid; gap: 14px; margin-top: 34px; }
+.site-choice { grid-template-columns: auto 1fr; align-items: center; border: 1px solid var(--line); background: #fff; border-radius: 14px; padding: 16px; }
+.site-choice input { width: auto; }
+.site-choice span { display: grid; gap: 4px; }
+.site-choice small { color: var(--muted); font-weight: 500; }
 label { display: grid; gap: 7px; color: #6f6a62; font-weight: 700; }
 input, textarea { width: 100%; border: 1px solid var(--line); background: #fff; color: var(--ink); font: inherit; border-radius: 12px; padding: 13px 14px; }
 .editor-shell { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 68px; background: #fff; }
@@ -317,7 +369,7 @@ textarea { border: 0; padding: 34px 0; min-height: 70vh; resize: none; outline: 
 .preview h1, .preview h2, .preview h3 { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
 .editor-actions { grid-column: 1 / -1; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto auto auto auto; align-items: center; gap: 14px; padding: 0 36px; color: var(--muted); }
 .slug-pill { border: 1px solid var(--line); border-radius: 999px; padding: 8px 18px; background: #fff; }
-.primary { background: var(--green); }
+.primary { background: var(--accent); }
 .article { max-width: 680px; margin: 80px auto; padding: 0 24px; font-family: Georgia, serif; font-size: 22px; line-height: 1.6; }
 .article h1 { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 42px; line-height: 1.1; }
 @media (max-width: 800px) {
@@ -348,4 +400,23 @@ function redirect(location: string): Response {
 
 function callbackUrl(url: URL): string {
   return `${url.origin}/auth/wordpress/callback`;
+}
+
+async function saveDiscoveredSites(root: string, sites: WordPressComSite[]): Promise<void> {
+  const path = discoveredSitesPath(root);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify({ sites }, null, 2));
+}
+
+async function readDiscoveredSites(root: string): Promise<WordPressComSite[]> {
+  try {
+    const json = JSON.parse(await readFile(discoveredSitesPath(root), "utf8")) as Record<string, unknown>;
+    return Array.isArray(json.sites) ? (json.sites as WordPressComSite[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function discoveredSitesPath(root: string): string {
+  return join(root, ".reef", "state", "wordpress-sites.json");
 }

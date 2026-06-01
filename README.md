@@ -29,3 +29,7 @@ http://localhost:3000/auth/wordpress/callback
 
 Project settings are stored in `reef.toml`. OAuth tokens are stored locally under
 `.reef/secrets/` and should not be committed.
+
+After OAuth, Reef asks WordPress.com for the sites available to the account. If
+there is one site it is selected automatically; if there are multiple, Reef shows
+a small site picker.

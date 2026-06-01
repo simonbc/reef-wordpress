@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createWordPressComClient } from "../src/wordpress-com";
+import { createWordPressComClient, listWordPressComSites } from "../src/wordpress-com";
 
 const originalFetch = globalThis.fetch;
 
@@ -79,5 +79,34 @@ describe("WordPress.com client", () => {
     expect(requests[0].url).toBe(
       "https://public-api.wordpress.com/wp/v2/sites/example.wordpress.com/pages/7",
     );
+  });
+
+  test("lists WordPress.com sites for the authenticated user", async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(url), init });
+      return Response.json({
+        sites: [
+          {
+            ID: 123,
+            name: "Simon",
+            URL: "https://simon.wordpress.com",
+          },
+        ],
+      });
+    }) as typeof fetch;
+
+    await expect(listWordPressComSites({ token: "oauth-token" })).resolves.toEqual([
+      {
+        id: "123",
+        title: "Simon",
+        url: "https://simon.wordpress.com",
+      },
+    ]);
+
+    expect(requests[0].url).toBe("https://public-api.wordpress.com/rest/v1.1/me/sites");
+    expect(requests[0].init?.headers).toMatchObject({
+      authorization: "Bearer oauth-token",
+    });
   });
 });
