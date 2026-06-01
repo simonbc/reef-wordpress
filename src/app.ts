@@ -18,6 +18,7 @@ import {
   listWordPressComSites,
   type WordPressComSite,
 } from "./wordpress-com";
+import { markdownToWordPressBlocks } from "./wordpress-codec";
 
 export type App = {
   fetch(request: Request): Promise<Response>;
@@ -328,18 +329,19 @@ function renderEditor(input: { title: string; type: DocumentType; document?: Ree
       "</div>",
       `<input type="hidden" name="type" value="${input.type}">`,
       `<textarea name="markdown" placeholder="Write something..." data-markdown-editor>${escapeHtml(markdown)}</textarea>`,
-      '<div class="editor-help">Markdown</div>',
       "</section>",
       '<section class="preview" data-markdown-preview>',
       markdown ? markdownToHtml(markdown) : '<p class="muted">Preview appears here.</p>',
       "</section>",
       '<footer class="editor-actions">',
-      `<span>${input.type === "post" ? "Post" : "Page"}</span>`,
-      `<span class="slug-pill">/${document?.slug ?? "set-slug"}</span>`,
+      `<div class="editor-kind">${input.type === "post" ? "Post" : "Page"}</div>`,
+      `<div class="editor-slug"><span class="slug-pill">/${document?.slug ?? "set-slug"}</span></div>`,
+      '<div class="editor-buttons">',
       '<button type="submit">Save locally</button>',
       '<button type="submit" name="intent" value="publish-draft" class="primary">Publish draft</button>',
       '<button type="submit" name="intent" value="publish" class="primary">Publish</button>',
       '<a href="/">Cancel</a>',
+      "</div>",
       "</footer>",
       "</form>",
       editorPreviewScript(),
@@ -505,14 +507,17 @@ input, textarea { width: 100%; border: 1px solid var(--line); background: #fff; 
 .editor-pane { border-right: 1px solid var(--line); }
 .title-input { border: 0; padding: 0; font-size: 24px; font-weight: 800; color: #aaa; outline: none; }
 textarea { border: 0; padding: 34px 0; min-height: 70vh; resize: none; outline: none; font: 18px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.editor-help { color: #aaa; position: fixed; left: 38px; bottom: 23px; }
 .preview { font-family: Georgia, serif; font-size: 22px; line-height: 1.62; color: #38332d; }
 .preview h1, .preview h2, .preview h3 { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-.editor-actions { grid-column: 1 / -1; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto auto auto auto; align-items: center; gap: 14px; padding: 0 36px; color: var(--muted); }
-.slug-pill { border: 1px solid var(--line); border-radius: 999px; padding: 8px 18px; background: #fff; }
+.editor-actions { grid-column: 1 / -1; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; padding: 0 36px; color: var(--muted); }
+.editor-buttons { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.editor-slug { display: flex; justify-content: center; }
+.editor-actions a, .editor-actions button, .slug-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; white-space: nowrap; line-height: 1; }
+.slug-pill { border: 1px solid var(--line); border-radius: 999px; padding: 0 18px; background: #fff; }
 .primary { background: var(--accent); }
 .article { max-width: 680px; margin: 80px auto; padding: 0 24px; font-family: Georgia, serif; font-size: 22px; line-height: 1.6; }
 .article h1 { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 42px; line-height: 1.1; }
+.markdown-help pre { overflow-x: auto; border: 1px solid var(--line); background: #fff; border-radius: 14px; padding: 22px; font-size: 16px; line-height: 1.55; }
 .article-actions { margin-top: 24px; display: flex; gap: 18px; align-items: center; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 15px; color: var(--muted); }
 .article-actions a { border-bottom: 1px solid var(--line); }
 .article-actions form { margin: 0; }
@@ -521,6 +526,7 @@ textarea { border: 0; padding: 34px 0; min-height: 70vh; resize: none; outline: 
   .editor-shell { display: block; }
   .editor-pane { border-right: 0; border-bottom: 1px solid var(--line); }
   .editor-actions { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; background: #fff; min-height: 68px; }
+  .editor-buttons { flex-wrap: wrap; justify-content: flex-start; }
   .topbar { padding: 0 22px; }
   .home { margin-top: 44px; }
 }
@@ -574,7 +580,7 @@ async function syncWordPress(input: {
   const payload = {
     type: input.document.type,
     title: input.document.title,
-    html: markdownToHtml(input.document.markdown),
+    html: markdownToWordPressBlocks(input.document.markdown),
     status: input.status,
   } as const;
 

@@ -181,6 +181,10 @@ describe("browser app", () => {
     expect(body).toContain("renderMarkdown");
     expect(body).toContain("Publish draft");
     expect(body).toContain("Publish");
+    expect(body).not.toContain("editor-help");
+    expect(body).toContain('<div class="editor-kind">Post</div>');
+    expect(body).toContain('<div class="editor-slug"><span class="slug-pill">/set-slug</span></div>');
+    expect(body).toContain('<div class="editor-buttons">');
   });
 
   test("creates a local post from the editor", async () => {
@@ -402,6 +406,7 @@ describe("browser app", () => {
     expect(requests[0].body).toMatchObject({
       title: "Publish Me",
       status: "draft",
+      content: expect.stringContaining("<!-- wp:paragraph -->"),
     });
     await expect(
       readFile(join(root, ".reef", "state", "wordpress-com.json"), "utf8"),
@@ -453,6 +458,7 @@ describe("browser app", () => {
     expect(requests[0].body).toMatchObject({
       title: "Publish Me Live",
       status: "publish",
+      content: expect.stringContaining("<!-- wp:paragraph -->"),
     });
     await expect(
       readFile(join(root, ".reef", "state", "wordpress-com.json"), "utf8"),
@@ -517,7 +523,7 @@ describe("browser app", () => {
     expect(requests[0].url).toBe("https://public-api.wordpress.com/wp/v2/sites/123/posts/42");
     expect(requests[0].body).toMatchObject({
       status: "publish",
-      content: expect.stringContaining("Updated live body."),
+      content: expect.stringContaining("<!-- wp:paragraph -->"),
     });
     await expect(
       readFile(join(root, ".reef", "state", "wordpress-com.json"), "utf8"),
